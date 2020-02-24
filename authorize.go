@@ -4,58 +4,51 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/dgrijalva/jwt-go"
+	jwt "github.com/dgrijalva/jwt-go"
 )
 
-// Require checks for a valid Authorization token
+// Require is a http.HandlerFunc decorator that checks for a valid web token
 func Require(endpoint func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, err := claimsFromRequest(r); err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-		} else {
-			endpoint(w, r)
+		authorization := r.Header.Get("Authorization")
+
+		if len(authorization) == 0 {
+			http.Error(w, "no authorization header", http.StatusUnauthorized)
+			return
 		}
+
+		if err := authorize(authorization[7:]); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		endpoint(w, r)
 	}
 }
 
-var issuerPublicKeys map[string]string
+// SetAuthorizeFunc sets the function that is used to authorize the token
+func SetAuthorizeFunc(fn func(tokenString string) error) {
+	authorize = fn
+}
 
-func claimsFromRequest(r *http.Request) (claims *Claims, err error) {
-	authorizationHeader := r.Header.Get("Authorization")
+// SetKeyFunc sets the function that returns the key to be used for validating the token
+func SetKeyFunc(fn func(token *jwt.Token) (interface{}, error)) {
+	key = fn
+}
 
-	if len(authorizationHeader) == 0 {
-		return nil, fmt.Errorf("No authorization header")
-	}
-
-	claims = new(Claims)
-
-	token, err := jwt.ParseWithClaims(authorizationHeader[7:], claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte("secret-key"), nil
-
-	})
-
+var authorize = func(tokenString string) error {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.StandardClaims{}, key)
 	if err != nil {
-		return nil, fmt.Errorf("Could not parse claim: %+v", err)
+		return fmt.Errorf("could not parse claim: %v", err)
 	}
 
-	if _, ok := token.Claims.(*Claims); !ok || !token.Valid {
-		return nil, fmt.Errorf("Invalid token")
+	if !token.Valid {
+		return fmt.Errorf("invalid token")
 	}
 
-	return claims, err
+	return nil
 }
 
-type Claims struct {
-	jwt.StandardClaims
-
-	ExternalID string  `json:"id"`
-	Username   string  `json:"username"`
-	Fullname   string  `json:"fullname"`
-	Groups     []Group `json:"groups"`
-}
-
-type Group struct {
-	ExternalID  string `json:"id"`
-	Name        string `json:"name"`
-	FacilityIDs []int  `json:"facility_ids"`
+var key = func(token *jwt.Token) (interface{}, error) {
+	return []byte("secret-key"), nil
 }
