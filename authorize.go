@@ -8,7 +8,7 @@ import (
 )
 
 // Require is a http.HandlerFunc decorator that checks for a valid web token
-func Require(endpoint func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
+func Require(endpoint http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authorization := r.Header.Get("Authorization")
 
